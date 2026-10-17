@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session delete (dsh-session-delete)",
+    "description": "Delete a session together with every subagent session it spawned, instead of leaving orphans behind."
+  }
+}

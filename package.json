@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-delete",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Delete a DSH session together with all its subagent sessions · 永久删除 DSH 会话及其派生的所有子代理会话",
   "type": "module",
@@ -8,14 +8,17 @@
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib/index.js",
     "lib/client.js",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "locale/*.json",
+    "icon.svg"
   ],
   "keywords": [
     "dsh",
@@ -26,7 +29,8 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.1-rc.1 <0.3.0-0"
   },
   "scripts": {
     "test": "node test/selftest.mjs"
@@ -40,6 +44,8 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.0-rc.2 <0.3.0-0"
-  }
+    "@deepseek-ai/dsh": ">=0.2.1-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-rc.1 <0.3.0-0"
+  },
+  "icon": "icon.svg"
 }
