@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 
-const home = await mkdtemp(join(tmpdir(), "dsh-session-delete-test-"));
+const home = await mkdtemp(join(tmpdir(), "dsh-session-purger-test-"));
 process.env.DSH_HOME = home;
 const plugin = await import("../lib/index.js");
 const { purgeSessionTree, subagentDescendants, apply, ENDPOINT, REQUEST_HEADER } = plugin;
@@ -115,7 +115,7 @@ check("missing header rejected", (await call({ headers: { [REQUEST_HEADER]: unde
 check("cross-site rejected", (await call({ headers: { "sec-fetch-site": "cross-site" } })) === 403);
 check("form post rejected", (await call({ headers: { "content-type": "text/plain" } })) === 403);
 check("trusted call reaches handler", (await call({ body: '{"sessionId":"nope"}' })) === 409);
-check("endpoint path namespaced", ENDPOINT === "/api/dsh-session-delete/purge");
+check("endpoint path namespaced", ENDPOINT === "/api/dsh-session-purger/purge");
 
 await rm(home, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);

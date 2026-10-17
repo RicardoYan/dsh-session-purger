@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "会话删除 (dsh-session-delete)",
+    "title": "会话删除 (dsh-session-purger)",
     "description": "删除会话时连同它派生的所有子代理会话一起删掉，不留孤儿。"
   }
 }

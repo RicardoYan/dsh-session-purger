@@ -1,4 +1,4 @@
-# dsh-session-delete
+# dsh-session-purger
 
 给 DSH 会话菜单加一个「删除会话」：连同它派生的所有子代理会话（任意层级）一起永久删除。
 
@@ -7,12 +7,12 @@ DSH 自带的只有归档，会话和子代理记录都还留在磁盘上。
 ## 安装
 
 ```sh
-dsh plugin --profile desktop add github:RicardoYan/dsh-session-delete#v0.1.1
+dsh plugin --profile desktop add github:RicardoYan/dsh-session-purger#v0.2.0
 ```
 
 Web 端把 `desktop` 换成你的 profile 名（一般是 `web`）。装完重启 DSH。
 
-卸载：`dsh plugin --profile desktop remove dsh-session-delete`
+卸载：`dsh plugin --profile desktop remove dsh-session-purger`
 
 ## 使用
 

@@ -1,6 +1,6 @@
 {
-  "name": "dsh-session-delete",
-  "version": "0.1.1",
+  "name": "dsh-session-purger",
+  "version": "0.2.0",
   "private": true,
   "description": "Delete a DSH session together with all its subagent sessions · 永久删除 DSH 会话及其派生的所有子代理会话",
   "type": "module",
