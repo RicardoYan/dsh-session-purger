@@ -7,7 +7,7 @@ DSH 自带的只有归档，会话和子代理记录都还留在磁盘上。
 ## 安装
 
 ```sh
-dsh plugin --profile desktop add github:RicardoYan/dsh-session-purger#v0.2.0
+dsh plugin --profile desktop add github:RicardoYan/dsh-session-purger#v0.2.1
 ```
 
 Web 端把 `desktop` 换成你的 profile 名（一般是 `web`）。装完重启 DSH。
@@ -26,6 +26,19 @@ Web 端把 `desktop` 换成你的 profile 名（一般是 `web`）。装完重�
 
 - 删除不可撤销
 - 依赖 DSH 的存储布局，适用于 `@deepseek-ai/dsh` `>=0.2.1-rc.1 <0.3.0-0`
+
+## 开发
+
+源码是 TypeScript（`src/`），发布的是编译产物（`lib/`，随仓库提交）：
+
+```sh
+npm install
+npm run build      # src/index.ts → lib/index.js，src/client.ts → lib/client.js
+npm run typecheck  # 两个 tsconfig 各查一半
+npm test           # build + selftest
+```
+
+`devDependencies` 里固定的官方包版本用于类型检查，DSH 升级后要跟着改，否则类型会对不上实际运行的版本。
 
 ## 许可证
 
