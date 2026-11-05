@@ -7,7 +7,7 @@ DSH 自带的只有归档，会话和子代理记录都还留在磁盘上。
 ## 安装
 
 ```sh
-dsh plugin --profile desktop add github:RicardoYan/dsh-session-purger#v0.2.3
+dsh plugin --profile desktop add github:RicardoYan/dsh-session-purger#v0.3.0
 ```
 
 Web 端把 `desktop` 换成你的 profile 名（一般是 `web`）。装完重启 DSH。
@@ -25,7 +25,7 @@ Web 端把 `desktop` 换成你的 profile 名（一般是 `web`）。装完重�
 ## 注意
 
 - 删除不可撤销
-- 依赖 DSH 的存储布局，适用于 `@deepseek-ai/dsh` `>=0.2.1-rc.1 <0.3.0-0`
+- 依赖 DSH 的存储布局，适用于 `@deepseek-ai/dsh` `>=0.2.2-rc.1 <0.3.0-0`
 
 ## 开发
 
