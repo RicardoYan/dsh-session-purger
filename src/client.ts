@@ -1,10 +1,15 @@
 /**
  * dsh-session-purger — browser half.
  *
- * Adds one danger row to the sidebar session menu. The first click asks the
- * Host how many subagent sessions belong to the conversation; the row then
- * names that number and a second click removes the whole tree. An unanswered
- * confirmation falls back to the idle label after a few seconds.
+ * Two seats work together, mirroring how DSH's own archive action is built:
+ *
+ * - a `contextMenus` entry in the session menu, ordered INSIDE the archive
+ *   group so it renders below it. The menu renders ordinary entries, then the
+ *   `sidebar.workspaces.session.menu.item` slot rows, then the `afterContent`
+ *   entries (archive). A slot row can therefore never sit below archive, which
+ *   is why this one is a menu-registry entry with `afterContent: true` instead;
+ * - a `shell.overlay` dialog that owns the confirmation and the whole delete
+ *   flow. Clicking the entry only records the target session and opens it.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ClientBundleRegistration } from '@deepseek-ai/dsh-client-modules/client'
@@ -17,21 +22,23 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 const NS = 'dsh-session-purger'
 const ENDPOINT = '/api/dsh-session-purger/purge'
-const REVERT_MS = 5000
 
 /** The locale dictionary keys this bundle owns. */
 type DictKey =
   | 'menu.delete'
-  | 'menu.checking'
-  | 'menu.confirm'
-  | 'menu.confirmTree'
-  | 'menu.deleting'
-  | 'menu.leftover'
-  | 'menu.failed'
+  | 'dialog.title'
+  | 'dialog.body'
+  | 'dialog.bodyTree'
+  | 'dialog.checking'
+  | 'dialog.deleting'
+  | 'dialog.cancel'
+  | 'dialog.action'
+  | 'dialog.leftover'
+  | 'dialog.failed'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Session-menu copy for this plugin. */
+    /** Session-menu and confirm-dialog copy for this plugin. */
     'dsh-session-purger': DictKey
   }
 }
@@ -49,21 +56,27 @@ declare global {
 
 const en: Record<DictKey, string> = {
   'menu.delete': 'Delete session',
-  'menu.checking': 'Checking…',
-  'menu.confirm': 'Delete permanently? This cannot be undone',
-  'menu.confirmTree': 'Delete permanently, with {n} subagent sessions?',
-  'menu.deleting': 'Deleting…',
-  'menu.leftover': 'Deleted; files still in use are removed on next start',
-  'menu.failed': 'Delete failed: {reason}',
+  'dialog.title': 'Delete this session permanently?',
+  'dialog.body': 'This removes the conversation and its stored log. It cannot be undone.',
+  'dialog.bodyTree': 'This removes the conversation and the {n} subagent sessions under it. It cannot be undone.',
+  'dialog.checking': 'Checking for subagent sessions…',
+  'dialog.deleting': 'Deleting…',
+  'dialog.cancel': 'Cancel',
+  'dialog.action': 'Delete permanently',
+  'dialog.leftover': 'Deleted. Files still in use are removed the next time DSH starts.',
+  'dialog.failed': 'Delete failed: {reason}',
 }
 const zh: Record<DictKey, string> = {
   'menu.delete': '删除会话',
-  'menu.checking': '检查中…',
-  'menu.confirm': '永久删除？此操作不可撤销',
-  'menu.confirmTree': '永久删除？将连同 {n} 个子代理会话一起删除',
-  'menu.deleting': '删除中…',
-  'menu.leftover': '已删除；仍被占用的文件将在下次启动时清除',
-  'menu.failed': '删除失败：{reason}',
+  'dialog.title': '永久删除这个会话？',
+  'dialog.body': '会话和它的日志都会被删除，此操作不可撤销。',
+  'dialog.bodyTree': '会话和它下面的 {n} 个子代理会话都会被删除，此操作不可撤销。',
+  'dialog.checking': '正在检查子代理会话…',
+  'dialog.deleting': '删除中…',
+  'dialog.cancel': '取消',
+  'dialog.action': '永久删除',
+  'dialog.leftover': '已删除。仍被占用的文件会在下次启动 DSH 时清除。',
+  'dialog.failed': '删除失败：{reason}',
 }
 
 /** The slice of the Host's answer this row reads. */
@@ -86,8 +99,7 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const React = require('react') as typeof import('react')
     const primitives = require('@deepseek-ai/dsh-client-ui-primitives') as typeof Primitives
-    const { MenuItemButton, IconTrashOutlineRegular } = primitives
-    const { useEffect, useRef, useState } = React
+    const { useEffect, useState } = React
     const h = React.createElement
 
     async function purge(body: PurgeBody): Promise<{ ok: boolean; data: PurgeAnswer; status: number }> {
@@ -116,93 +128,195 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** The row's own state: a step, plus the notice text some steps carry. */
-    type RowState =
-      | { step: 'idle' }
+    /** Which session the open dialog is for, or `null` when nothing is pending. */
+    type Pending = { sessionId: string; displayTitle: string } | null
+
+    /** The dialog's own progress, separate from the pending target so it resets per opening. */
+    type Stage =
       | { step: 'checking' }
+      | { step: 'idle' }
       | { step: 'deleting' }
-      | { step: 'confirm'; text: string }
       | { step: 'notice'; text: string }
 
     /**
-     * The row's props: the slot's owner share + the `useMenuOpenState` hook
-     * (declared by that slot's injection compartment) + the injected business
-     * face + the locale `t` seat of this bundle's namespace.
-     *
-     * `EntryKey` must stay a `string`: this slot is a list, so its key domain
-     * is the open string set. Narrowing it to something non-string makes
-     * `ComposedProps` fail its constraint and silently degrade to `any` —
-     * every prop check in this file would then quietly pass.
+     * The pending target is shared by the menu entry (which only sets it) and
+     * the overlay dialog (which reads it). A plain snapshot store keeps the two
+     * seats in sync without either owning React state the other cannot see.
      */
-    type RowProps = ComposedProps<
-      'sidebar.workspaces.session.menu.item',
+    interface PendingStore {
+      get(): Pending
+      set(next: Pending): void
+      subscribe(listener: () => void): () => void
+    }
+
+    function createPendingStore(): PendingStore {
+      let value: Pending = null
+      const listeners = new Set<() => void>()
+      return {
+        get: () => value,
+        set(next) {
+          value = next
+          listeners.forEach((listener) => listener())
+        },
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+      }
+    }
+
+    /**
+     * The dialog's props: the overlay slot's owner share, the injected business
+     * face, and this bundle's locale seat.
+     *
+     * `EntryKey` stays `string` for the same reason the menu slot did: a
+     * non-string key domain degrades `ComposedProps` to `any` and every prop
+     * check in this file would silently pass.
+     */
+    type DialogProps = ComposedProps<
+      'shell.overlay',
       string,
       never,
       undefined,
-      { sessions: { refresh?: () => void } | undefined },
+      {
+        sessions: { refresh?: () => void } | undefined
+        store: PendingStore
+      },
       never,
       typeof NS
     >
 
-    function DeleteSessionItem({ sessionId, useMenuOpenState, sessions, t }: RowProps) {
-      const [, setMenuOpen] = useMenuOpenState()
-      const [state, setState] = useState<RowState>({ step: 'idle' })
-      const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    function DeleteSessionDialog({ sessions, store, t }: DialogProps) {
+      const { Modal, Button } = primitives
+      const target = React.useSyncExternalStore(store.subscribe, store.get, store.get)
+      const [stage, setStage] = useState<Stage>({ step: 'checking' })
+      const [count, setCount] = useState(0)
 
-      useEffect(() => () => clearTimeout(timer.current), [])
-
-      const settle = (next: RowState): void => {
-        clearTimeout(timer.current)
-        setState(next)
-        timer.current = setTimeout(() => setState({ step: 'idle' }), REVERT_MS)
-      }
-      const failed = (reason: string): void => settle({ step: 'notice', text: t('menu.failed', { reason }) })
-
-      const askFirst = async (): Promise<void> => {
-        setState({ step: 'checking' })
-        try {
-          const { ok, data, status } = await purge({ sessionId, dryRun: true })
-          if (!ok) return failed(data.message ?? data.reason ?? String(status))
-          const n = data.subagents ?? 0
-          settle({ step: 'confirm', text: n > 0 ? t('menu.confirmTree', { n }) : t('menu.confirm') })
-        } catch (error) {
-          failed(String((error as { message?: unknown } | undefined)?.message ?? error))
+      // A new target starts a fresh check; closing resets so a reopen re-checks.
+      useEffect(() => {
+        if (target === null) return undefined
+        let live = true
+        setStage({ step: 'checking' })
+        void (async () => {
+          try {
+            const { ok, data, status } = await purge({ sessionId: target.sessionId, dryRun: true })
+            if (!live) return
+            if (!ok) {
+              setStage({ step: 'notice', text: t('dialog.failed', { reason: data.message ?? data.reason ?? String(status) }) })
+              return
+            }
+            setStage({ step: 'idle' })
+            setCount(data.subagents ?? 0)
+          } catch (error) {
+            if (!live) return
+            setStage({
+              step: 'notice',
+              text: t('dialog.failed', {
+                reason: String((error as { message?: unknown } | undefined)?.message ?? error),
+              }),
+            })
+          }
+        })()
+        return () => {
+          live = false
         }
+      }, [target, t])
+
+      if (target === null) return null
+
+      const busy = stage.step === 'checking' || stage.step === 'deleting'
+      const close = (): void => {
+        if (busy) return
+        store.set(null)
       }
 
-      const remove = async (): Promise<void> => {
-        clearTimeout(timer.current)
-        setState({ step: 'deleting' })
+      const confirm = async (): Promise<void> => {
+        setStage({ step: 'deleting' })
         try {
-          const { ok, data, status } = await purge({ sessionId })
-          if (!ok && data.reason !== 'not-found') return failed(data.message ?? data.reason ?? String(status))
-          forgetLocalState([sessionId, ...(data.removed ?? []), ...(data.leftover ?? [])])
+          const { ok, data, status } = await purge({ sessionId: target.sessionId })
+          if (!ok && data.reason !== 'not-found') {
+            setStage({ step: 'notice', text: t('dialog.failed', { reason: data.message ?? data.reason ?? String(status) }) })
+            return
+          }
+          forgetLocalState([target.sessionId, ...(data.removed ?? []), ...(data.leftover ?? [])])
           try {
             sessions?.refresh?.()
           } catch {
             /* the next list pull converges */
           }
-          if ((data.leftover ?? []).length > 0) return settle({ step: 'notice', text: t('menu.leftover') })
-          setMenuOpen(false)
+          if ((data.leftover ?? []).length > 0) {
+            setStage({ step: 'notice', text: t('dialog.leftover') })
+            return
+          }
+          store.set(null)
         } catch (error) {
-          failed(String((error as { message?: unknown } | undefined)?.message ?? error))
+          setStage({
+            step: 'notice',
+            text: t('dialog.failed', {
+              reason: String((error as { message?: unknown } | undefined)?.message ?? error),
+            }),
+          })
         }
       }
 
-      const idleLabel: Partial<Record<RowState['step'], string>> = {
-        idle: t('menu.delete'),
-        checking: t('menu.checking'),
-        deleting: t('menu.deleting'),
-      }
-      const label = idleLabel[state.step] ?? ('text' in state ? state.text : '')
+      const body =
+        stage.step === 'checking'
+          ? t('dialog.checking')
+          : stage.step === 'deleting'
+            ? t('dialog.deleting')
+            : stage.step === 'notice'
+              ? stage.text
+              : count > 0
+                ? t('dialog.bodyTree', { n: count })
+                : t('dialog.body')
 
-      return h(MenuItemButton, {
-        danger: true,
-        disabled: state.step === 'checking' || state.step === 'deleting',
-        icon: h(IconTrashOutlineRegular, { size: 14 }),
-        onSelect: () => (state.step === 'confirm' ? remove() : askFirst()),
-        children: label,
+      return h(Modal, {
+        open: true,
+        onClose: close,
+        closeLabel: t('dialog.cancel'),
+        title: t('dialog.title'),
+        description: body,
+        footer: h(
+          React.Fragment,
+          null,
+          h(Button, { variant: 'outline', disabled: busy, onClick: close, children: t('dialog.cancel') }),
+          h(Button, {
+            variant: 'outline',
+            disabled: busy || stage.step === 'notice',
+            onClick: () => void confirm(),
+            children: t('dialog.action'),
+          }),
+        ),
       })
+    }
+
+    /**
+     * One session-menu contribution as the `contextMenus` service takes it.
+     *
+     * Declared here rather than imported: `@deepseek-ai/dsh-client-ui-context-menu`
+     * is not a dependency of this package (the service is looked up through the
+     * client context), so there is no declaration file to import from. The shape
+     * mirrors what `dsh-client-ui-workspace` passes for its own archive row.
+     */
+    interface SessionMenuEntry {
+      id: string
+      label: string
+      icon?: { key: string }
+      danger?: boolean
+      afterContent?: boolean
+      commandId?: string
+      disabled?: boolean
+      run: () => void
+    }
+
+    interface ContextMenusService {
+      register(input: {
+        id: string
+        target: 'session'
+        order: number
+        observe?: (target: { sessionId: string }) => unknown[]
+        resolve: (target: { sessionId: string; displayTitle?: string }) => SessionMenuEntry[]
+      }): () => void
     }
 
     return {
@@ -210,16 +324,51 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale'],
       apply(ctx: Context) {
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-session-purger: dictionaries')
-        ctx.slots.inject('sidebar.workspaces.session.menu.item', function* () {
+        const store = createPendingStore()
+        const sessions = ctx.get('sessions') as { refresh?: () => void } | undefined
+
+        // The menu entry only records the target. `afterContent` puts it in the
+        // menu's footer list beside archive, which is the only way to render
+        // below that row: ordinary slot rows always sit above `afterContent`.
+        ctx.inject(['contextMenus'], (c) => {
+          const menus = c.contextMenus as unknown as ContextMenusService
+          if (menus === undefined || typeof menus.register !== 'function') {
+            ctx.logger?.warn?.(`${NS}: ctx.contextMenus missing; delete row not added to the session menu`)
+            return
+          }
+          menus.register({
+            id: 'dsh-session-purger.delete',
+            target: 'session',
+            // Archive is 600; 601 sorts directly beneath it.
+            order: 601,
+            resolve: (target) => [
+              {
+                id: 'delete',
+                label: String(ctx.locale.bind(NS)('menu.delete')),
+                icon: { key: 'workspace.delete' },
+                danger: true,
+                // `afterContent` belongs on the ACTION, not on `register`: the
+                // registry keeps only id/target/order/observe/resolve and the
+                // menu splits actions into body vs footer by this flag. Archive
+                // sets it too, which is why it always renders last.
+                afterContent: true,
+                run: () => {
+                  store.set({ sessionId: target.sessionId, displayTitle: target.displayTitle ?? '' })
+                },
+              },
+            ],
+          })
+        })
+
+        ctx.slots.inject('shell.overlay', function* () {
           yield ctx.slots.register(
             {
-              name: 'sidebar.workspaces.session.menu.item',
-              id: 'dsh-session-purger',
-              order: 900,
+              name: 'shell.overlay',
+              id: 'dsh-session-purger.confirm',
               locale: NS,
-              inject: () => ({ sessions: ctx.get('sessions') as { refresh?: () => void } | undefined }),
+              inject: () => ({ sessions, store }),
             },
-            DeleteSessionItem,
+            DeleteSessionDialog,
           )
         })
       },
