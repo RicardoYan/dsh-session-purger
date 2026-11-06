@@ -7,7 +7,7 @@ DSH 自带的只有归档，会话和子代理记录都还留在磁盘上。
 ## 安装
 
 ```sh
-dsh plugin --profile desktop add github:RicardoYan/dsh-session-purger#v0.3.0
+dsh plugin --profile desktop add github:RicardoYan/dsh-session-purger#v0.3.1
 ```
 
 Web 端把 `desktop` 换成你的 profile 名（一般是 `web`）。装完重启 DSH。
@@ -17,6 +17,8 @@ Web 端把 `desktop` 换成你的 profile 名（一般是 `web`）。装完重�
 ## 使用
 
 会话行 `⋯` → **删除会话**。第一次点击会显示要连带删除几个子代理会话，再点一次才执行。
+
+点「永久删除」后弹窗立刻关闭，删除在后台进行；连续删多个会话时是一个接一个执行，不会互相打断。只有出错或有文件被占用时才会再弹一条提示。
 
 - 会清理：会话日志、投影缓存、工作区记录、spill 文件、浏览器里的界面状态
 - 不会删：分叉（fork）出的会话、工作区文件夹里的项目文件

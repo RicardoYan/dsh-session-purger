@@ -8,8 +8,11 @@
  *   `sidebar.workspaces.session.menu.item` slot rows, then the `afterContent`
  *   entries (archive). A slot row can therefore never sit below archive, which
  *   is why this one is a menu-registry entry with `afterContent: true` instead;
- * - a `shell.overlay` dialog that owns the confirmation and the whole delete
- *   flow. Clicking the entry only records the target session and opens it.
+ * - a `shell.overlay` dialog that owns the confirmation. Clicking the entry
+ *   only records the target session and opens it; confirming closes the dialog
+ *   at once and hands the purge to a one-at-a-time queue;
+ * - a `shell.overlay` Toast that reports what the closed dialog can no longer
+ *   say: a refused purge, or one that left files behind.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ClientBundleRegistration } from '@deepseek-ai/dsh-client-modules/client'
@@ -30,7 +33,6 @@ type DictKey =
   | 'dialog.body'
   | 'dialog.bodyTree'
   | 'dialog.checking'
-  | 'dialog.deleting'
   | 'dialog.cancel'
   | 'dialog.action'
   | 'dialog.leftover'
@@ -60,7 +62,6 @@ const en: Record<DictKey, string> = {
   'dialog.body': 'This removes the conversation and its stored log. It cannot be undone.',
   'dialog.bodyTree': 'This removes the conversation and the {n} subagent sessions under it. It cannot be undone.',
   'dialog.checking': 'Checking for subagent sessions…',
-  'dialog.deleting': 'Deleting…',
   'dialog.cancel': 'Cancel',
   'dialog.action': 'Delete permanently',
   'dialog.leftover': 'Deleted. Files still in use are removed the next time DSH starts.',
@@ -72,7 +73,6 @@ const zh: Record<DictKey, string> = {
   'dialog.body': '会话和它的日志都会被删除，此操作不可撤销。',
   'dialog.bodyTree': '会话和它下面的 {n} 个子代理会话都会被删除，此操作不可撤销。',
   'dialog.checking': '正在检查子代理会话…',
-  'dialog.deleting': '删除中…',
   'dialog.cancel': '取消',
   'dialog.action': '永久删除',
   'dialog.leftover': '已删除。仍被占用的文件会在下次启动 DSH 时清除。',
@@ -89,7 +89,6 @@ const de: Record<DictKey, string> = {
   'dialog.bodyTree':
     'Der Verlauf und die {n} Subagenten-Sitzungen darunter werden entfernt. Das lässt sich nicht rückgängig machen.',
   'dialog.checking': 'Subagenten-Sitzungen werden geprüft…',
-  'dialog.deleting': 'Wird gelöscht…',
   'dialog.cancel': 'Abbrechen',
   'dialog.action': 'Endgültig löschen',
   'dialog.leftover': 'Gelöscht. Noch verwendete Dateien werden beim nächsten Start von DSH entfernt.',
@@ -102,7 +101,6 @@ const es: Record<DictKey, string> = {
   'dialog.bodyTree':
     'Se eliminarán la conversación y las {n} sesiones de subagentes que dependen de ella. Esta acción no se puede deshacer.',
   'dialog.checking': 'Comprobando sesiones de subagentes…',
-  'dialog.deleting': 'Eliminando…',
   'dialog.cancel': 'Cancelar',
   'dialog.action': 'Eliminar permanentemente',
   'dialog.leftover': 'Eliminado. Los archivos aún en uso se borrarán la próxima vez que se inicie DSH.',
@@ -115,7 +113,6 @@ const fr: Record<DictKey, string> = {
   'dialog.bodyTree':
     'La conversation et les {n} sessions de sous-agents qu\'elle contient seront supprimées. Cette action est irréversible.',
   'dialog.checking': 'Recherche des sessions de sous-agents…',
-  'dialog.deleting': 'Suppression…',
   'dialog.cancel': 'Annuler',
   'dialog.action': 'Supprimer définitivement',
   'dialog.leftover': 'Supprimé. Les fichiers encore utilisés seront effacés au prochain démarrage de DSH.',
@@ -127,7 +124,6 @@ const ja: Record<DictKey, string> = {
   'dialog.body': '会話とそのログが削除されます。この操作は取り消せません。',
   'dialog.bodyTree': '会話と、その下にある {n} 個のサブエージェントセッションが削除されます。この操作は取り消せません。',
   'dialog.checking': 'サブエージェントセッションを確認しています…',
-  'dialog.deleting': '削除中…',
   'dialog.cancel': 'キャンセル',
   'dialog.action': '完全に削除',
   'dialog.leftover': '削除しました。使用中のファイルは次回 DSH の起動時に削除されます。',
@@ -140,7 +136,6 @@ const pt: Record<DictKey, string> = {
   'dialog.bodyTree':
     'A conversa e as {n} sessões de subagentes abaixo dela serão removidas. Esta ação não pode ser desfeita.',
   'dialog.checking': 'Verificando sessões de subagentes…',
-  'dialog.deleting': 'Excluindo…',
   'dialog.cancel': 'Cancelar',
   'dialog.action': 'Excluir permanentemente',
   'dialog.leftover': 'Excluído. Os arquivos ainda em uso serão removidos na próxima vez que o DSH iniciar.',
@@ -153,7 +148,6 @@ const ru: Record<DictKey, string> = {
   'dialog.bodyTree':
     'Разговор и {n} сеансов субагентов под ним будут удалены. Это действие нельзя отменить.',
   'dialog.checking': 'Проверяем сеансы субагентов…',
-  'dialog.deleting': 'Удаление…',
   'dialog.cancel': 'Отмена',
   'dialog.action': 'Удалить безвозвратно',
   'dialog.leftover': 'Удалено. Файлы, которые ещё используются, будут удалены при следующем запуске DSH.',
@@ -212,12 +206,12 @@ window.__ModuleLoader__.load({
     /** Which session the open dialog is for, or `null` when nothing is pending. */
     type Pending = { sessionId: string; displayTitle: string } | null
 
-    /** The dialog's own progress, separate from the pending target so it resets per opening. */
-    type Stage =
-      | { step: 'checking' }
-      | { step: 'idle' }
-      | { step: 'deleting' }
-      | { step: 'notice'; text: string }
+    /**
+     * The dialog's own progress, separate from the pending target so it resets
+     * per opening. Confirming closes the dialog and hands the work to the
+     * queue, so there is no in-dialog "deleting" stage.
+     */
+    type Stage = { step: 'checking' } | { step: 'idle' } | { step: 'notice'; text: string }
 
     /**
      * The pending target is shared by the menu entry (which only sets it) and
@@ -247,6 +241,70 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * A purge still in flight. The store runs one request at a time: the Host's
+     * leftovers file is a read-modify-write, so two overlapping purges that
+     * both leave files behind can lose one of the two entries.
+     */
+    interface TaskQueue {
+      push(task: () => Promise<void>): void
+    }
+
+    function createTaskQueue(): TaskQueue {
+      const pending: Array<() => Promise<void>> = []
+      let running = false
+      const pump = async (): Promise<void> => {
+        if (running) return
+        running = true
+        try {
+          for (let task = pending.shift(); task !== undefined; task = pending.shift()) {
+            try {
+              await task()
+            } catch {
+              /* one failed purge must not stall the ones queued behind it */
+            }
+          }
+        } finally {
+          running = false
+        }
+      }
+      return {
+        push(task) {
+          pending.push(task)
+          void pump()
+        },
+      }
+    }
+
+    /** One transient notice for the Toast seat: a new `seq` remounts it. */
+    type Notice = { text: string; seq: number } | null
+
+    interface NoticeStore {
+      get(): Notice
+      show(text: string): void
+      dismiss(): void
+      subscribe(listener: () => void): () => void
+    }
+
+    function createNoticeStore(): NoticeStore {
+      let value: Notice = null
+      let seq = 0
+      const listeners = new Set<() => void>()
+      const publish = (next: Notice): void => {
+        value = next
+        listeners.forEach((listener) => listener())
+      }
+      return {
+        get: () => value,
+        show: (text) => publish({ text, seq: (seq += 1) }),
+        dismiss: () => publish(null),
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+      }
+    }
+
+    /**
      * The dialog's props: the overlay slot's owner share, the injected business
      * face, and this bundle's locale seat.
      *
@@ -262,12 +320,14 @@ window.__ModuleLoader__.load({
       {
         sessions: { refresh?: () => void } | undefined
         store: PendingStore
+        queue: TaskQueue
+        notice: NoticeStore
       },
       never,
       typeof NS
     >
 
-    function DeleteSessionDialog({ sessions, store, t }: DialogProps) {
+    function DeleteSessionDialog({ sessions, store, queue, notice, t }: DialogProps) {
       const { Modal, Button } = primitives
       const target = React.useSyncExternalStore(store.subscribe, store.get, store.get)
       const [stage, setStage] = useState<Stage>({ step: 'checking' })
@@ -305,51 +365,48 @@ window.__ModuleLoader__.load({
 
       if (target === null) return null
 
-      const busy = stage.step === 'checking' || stage.step === 'deleting'
       const close = (): void => {
-        if (busy) return
         store.set(null)
       }
 
-      const confirm = async (): Promise<void> => {
-        setStage({ step: 'deleting' })
-        try {
-          const { ok, data, status } = await purge({ sessionId: target.sessionId })
-          if (!ok && data.reason !== 'not-found') {
-            setStage({ step: 'notice', text: t('dialog.failed', { reason: data.message ?? data.reason ?? String(status) }) })
-            return
-          }
-          forgetLocalState([target.sessionId, ...(data.removed ?? []), ...(data.leftover ?? [])])
+      // Close first, then let the queue report the outcome through the Toast
+      // seat: waiting here would freeze the dialog for the Host's settle delay
+      // plus up to four file-removal retries.
+      const confirm = (): void => {
+        const sessionId = target.sessionId
+        store.set(null)
+        queue.push(async () => {
           try {
-            sessions?.refresh?.()
-          } catch {
-            /* the next list pull converges */
+            const { ok, data, status } = await purge({ sessionId })
+            if (!ok && data.reason !== 'not-found') {
+              notice.show(t('dialog.failed', { reason: data.message ?? data.reason ?? String(status) }))
+              return
+            }
+            forgetLocalState([sessionId, ...(data.removed ?? []), ...(data.leftover ?? [])])
+            try {
+              sessions?.refresh?.()
+            } catch {
+              /* the next list pull converges */
+            }
+            if ((data.leftover ?? []).length > 0) notice.show(t('dialog.leftover'))
+          } catch (error) {
+            notice.show(
+              t('dialog.failed', {
+                reason: String((error as { message?: unknown } | undefined)?.message ?? error),
+              }),
+            )
           }
-          if ((data.leftover ?? []).length > 0) {
-            setStage({ step: 'notice', text: t('dialog.leftover') })
-            return
-          }
-          store.set(null)
-        } catch (error) {
-          setStage({
-            step: 'notice',
-            text: t('dialog.failed', {
-              reason: String((error as { message?: unknown } | undefined)?.message ?? error),
-            }),
-          })
-        }
+        })
       }
 
       const body =
         stage.step === 'checking'
           ? t('dialog.checking')
-          : stage.step === 'deleting'
-            ? t('dialog.deleting')
-            : stage.step === 'notice'
-              ? stage.text
-              : count > 0
-                ? t('dialog.bodyTree', { n: count })
-                : t('dialog.body')
+          : stage.step === 'notice'
+            ? stage.text
+            : count > 0
+              ? t('dialog.bodyTree', { n: count })
+              : t('dialog.body')
 
       return h(Modal, {
         open: true,
@@ -360,14 +417,41 @@ window.__ModuleLoader__.load({
         footer: h(
           React.Fragment,
           null,
-          h(Button, { variant: 'outline', disabled: busy, onClick: close, children: t('dialog.cancel') }),
+          h(Button, { variant: 'outline', onClick: close, children: t('dialog.cancel') }),
           h(Button, {
             variant: 'outline',
-            disabled: busy || stage.step === 'notice',
-            onClick: () => void confirm(),
+            disabled: stage.step === 'checking' || stage.step === 'notice',
+            onClick: confirm,
             children: t('dialog.action'),
           }),
         ),
+      })
+    }
+
+    /**
+     * The Toast seat: a failed purge, or one that left files behind, is
+     * reported here after the dialog has already closed. The copy arrives
+     * already translated, so this seat owns no locale namespace.
+     */
+    type ToastProps = ComposedProps<
+      'shell.overlay',
+      string,
+      never,
+      undefined,
+      { notice: NoticeStore }
+    >
+
+    function PurgeToast({ notice }: ToastProps) {
+      const { Toast } = primitives
+      const current = React.useSyncExternalStore(notice.subscribe, notice.get, notice.get)
+      if (current === null) return null
+      return h(Toast, {
+        key: current.seq,
+        text: current.text,
+        icon: h(primitives.IconWarningOutlineRegular, null),
+        // Failures name what broke, so they get longer than the default hold.
+        holdMs: 6000,
+        onDone: notice.dismiss,
       })
     }
 
@@ -406,6 +490,8 @@ window.__ModuleLoader__.load({
       apply(ctx: Context) {
         ctx.effect(() => ctx.locale.register(NS, { zh, en, de, es, fr, ja, pt, ru }), 'dsh-session-purger: dictionaries')
         const store = createPendingStore()
+        const queue = createTaskQueue()
+        const notice = createNoticeStore()
         const sessions = ctx.get('sessions') as { refresh?: () => void } | undefined
 
         // The menu entry only records the target. `afterContent` puts it in the
@@ -447,9 +533,17 @@ window.__ModuleLoader__.load({
               name: 'shell.overlay',
               id: 'dsh-session-purger.confirm',
               locale: NS,
-              inject: () => ({ sessions, store }),
+              inject: () => ({ sessions, store, queue, notice }),
             },
             DeleteSessionDialog,
+          )
+          yield ctx.slots.register(
+            {
+              name: 'shell.overlay',
+              id: 'dsh-session-purger.notice',
+              inject: () => ({ notice }),
+            },
+            PurgeToast,
           )
         })
       },
