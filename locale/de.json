@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sitzung löschen (dsh-session-purger)",
+    "description": "Löscht eine Sitzung samt aller von ihr gestarteten Subagenten-Sitzungen, statt verwaiste Einträge zu hinterlassen."
+  }
+}

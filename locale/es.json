@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Eliminar sesión (dsh-session-purger)",
+    "description": "Elimina una sesión junto con todas las sesiones de subagentes que generó, en lugar de dejar huérfanas."
+  }
+}

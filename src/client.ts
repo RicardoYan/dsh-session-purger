@@ -79,6 +79,87 @@ const zh: Record<DictKey, string> = {
   'dialog.failed': '删除失败：{reason}',
 }
 
+// DSH 0.2.2 ships eight UI languages. `ctx.locale.register` takes a dictionary
+// per locale id, so the remaining six are plain objects here; a language DSH
+// gains later simply falls back to the built-in English dictionary.
+const de: Record<DictKey, string> = {
+  'menu.delete': 'Sitzung löschen',
+  'dialog.title': 'Diese Sitzung endgültig löschen?',
+  'dialog.body': 'Der Verlauf und sein Protokoll werden entfernt. Das lässt sich nicht rückgängig machen.',
+  'dialog.bodyTree':
+    'Der Verlauf und die {n} Subagenten-Sitzungen darunter werden entfernt. Das lässt sich nicht rückgängig machen.',
+  'dialog.checking': 'Subagenten-Sitzungen werden geprüft…',
+  'dialog.deleting': 'Wird gelöscht…',
+  'dialog.cancel': 'Abbrechen',
+  'dialog.action': 'Endgültig löschen',
+  'dialog.leftover': 'Gelöscht. Noch verwendete Dateien werden beim nächsten Start von DSH entfernt.',
+  'dialog.failed': 'Löschen fehlgeschlagen: {reason}',
+}
+const es: Record<DictKey, string> = {
+  'menu.delete': 'Eliminar sesión',
+  'dialog.title': '¿Eliminar esta sesión de forma permanente?',
+  'dialog.body': 'Se eliminarán la conversación y su registro. Esta acción no se puede deshacer.',
+  'dialog.bodyTree':
+    'Se eliminarán la conversación y las {n} sesiones de subagentes que dependen de ella. Esta acción no se puede deshacer.',
+  'dialog.checking': 'Comprobando sesiones de subagentes…',
+  'dialog.deleting': 'Eliminando…',
+  'dialog.cancel': 'Cancelar',
+  'dialog.action': 'Eliminar permanentemente',
+  'dialog.leftover': 'Eliminado. Los archivos aún en uso se borrarán la próxima vez que se inicie DSH.',
+  'dialog.failed': 'Error al eliminar: {reason}',
+}
+const fr: Record<DictKey, string> = {
+  'menu.delete': 'Supprimer la session',
+  'dialog.title': 'Supprimer définitivement cette session ?',
+  'dialog.body': 'La conversation et son journal seront supprimés. Cette action est irréversible.',
+  'dialog.bodyTree':
+    'La conversation et les {n} sessions de sous-agents qu\'elle contient seront supprimées. Cette action est irréversible.',
+  'dialog.checking': 'Recherche des sessions de sous-agents…',
+  'dialog.deleting': 'Suppression…',
+  'dialog.cancel': 'Annuler',
+  'dialog.action': 'Supprimer définitivement',
+  'dialog.leftover': 'Supprimé. Les fichiers encore utilisés seront effacés au prochain démarrage de DSH.',
+  'dialog.failed': 'Échec de la suppression : {reason}',
+}
+const ja: Record<DictKey, string> = {
+  'menu.delete': 'セッションを削除',
+  'dialog.title': 'このセッションを完全に削除しますか？',
+  'dialog.body': '会話とそのログが削除されます。この操作は取り消せません。',
+  'dialog.bodyTree': '会話と、その下にある {n} 個のサブエージェントセッションが削除されます。この操作は取り消せません。',
+  'dialog.checking': 'サブエージェントセッションを確認しています…',
+  'dialog.deleting': '削除中…',
+  'dialog.cancel': 'キャンセル',
+  'dialog.action': '完全に削除',
+  'dialog.leftover': '削除しました。使用中のファイルは次回 DSH の起動時に削除されます。',
+  'dialog.failed': '削除に失敗しました：{reason}',
+}
+const pt: Record<DictKey, string> = {
+  'menu.delete': 'Excluir sessão',
+  'dialog.title': 'Excluir esta sessão permanentemente?',
+  'dialog.body': 'A conversa e o registro serão removidos. Esta ação não pode ser desfeita.',
+  'dialog.bodyTree':
+    'A conversa e as {n} sessões de subagentes abaixo dela serão removidas. Esta ação não pode ser desfeita.',
+  'dialog.checking': 'Verificando sessões de subagentes…',
+  'dialog.deleting': 'Excluindo…',
+  'dialog.cancel': 'Cancelar',
+  'dialog.action': 'Excluir permanentemente',
+  'dialog.leftover': 'Excluído. Os arquivos ainda em uso serão removidos na próxima vez que o DSH iniciar.',
+  'dialog.failed': 'Falha ao excluir: {reason}',
+}
+const ru: Record<DictKey, string> = {
+  'menu.delete': 'Удалить сеанс',
+  'dialog.title': 'Удалить этот сеанс безвозвратно?',
+  'dialog.body': 'Разговор и его журнал будут удалены. Это действие нельзя отменить.',
+  'dialog.bodyTree':
+    'Разговор и {n} сеансов субагентов под ним будут удалены. Это действие нельзя отменить.',
+  'dialog.checking': 'Проверяем сеансы субагентов…',
+  'dialog.deleting': 'Удаление…',
+  'dialog.cancel': 'Отмена',
+  'dialog.action': 'Удалить безвозвратно',
+  'dialog.leftover': 'Удалено. Файлы, которые ещё используются, будут удалены при следующем запуске DSH.',
+  'dialog.failed': 'Не удалось удалить: {reason}',
+}
+
 /** The slice of the Host's answer this row reads. */
 interface PurgeBody {
   sessionId: string
@@ -323,7 +404,7 @@ window.__ModuleLoader__.load({
       name: 'dsh-session-purger-ui',
       inject: ['slots', 'locale'],
       apply(ctx: Context) {
-        ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-session-purger: dictionaries')
+        ctx.effect(() => ctx.locale.register(NS, { zh, en, de, es, fr, ja, pt, ru }), 'dsh-session-purger: dictionaries')
         const store = createPendingStore()
         const sessions = ctx.get('sessions') as { refresh?: () => void } | undefined
 

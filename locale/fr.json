@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Supprimer la session (dsh-session-purger)",
+    "description": "Supprime une session ainsi que toutes les sessions de sous-agents qu'elle a créées, au lieu de laisser des orphelines."
+  }
+}
